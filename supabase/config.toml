@@ -1,0 +1,3 @@
+[functions.daily-reminder]
+verify_jwt = false
+entrypoint = "./functions/daily-reminder/index.ts"

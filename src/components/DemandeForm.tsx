@@ -1,0 +1,328 @@
+import { useMemo, useState } from "react";
+import { ClipboardPaste, Save, Loader2, Check, AlertCircle, Calendar, Flag, X } from "lucide-react";
+import { supabase, TYPE_DEMANDE_OPTIONS, PILOTE_OPTIONS, SOUS_PILOTE_DRH_OPTIONS, NIVEAU_PRIORITE_OPTIONS, type Demande } from "@/lib/supabase";
+import { parseEmailText, addDays } from "@/lib/emailParser";
+
+type FormData = {
+  emailRaw: string;
+  demandeur: string;
+  date_demande: string;
+  destinataires: string;
+  objet: string;
+  contenu: string;
+  type_demande: string;
+  type_precision: string;
+  pilotes: string[];
+  sous_pilote: string;
+  priorite: boolean;
+  niveau_priorite: string;
+  echeance: string;
+  observations: string;
+};
+
+const emptyForm: FormData = {
+  emailRaw: "",
+  demandeur: "",
+  date_demande: "",
+  destinataires: "",
+  objet: "",
+  contenu: "",
+  type_demande: "actions à réaliser",
+  type_precision: "",
+  pilotes: [],
+  sous_pilote: "",
+  priorite: false,
+  niveau_priorite: "",
+  echeance: "",
+  observations: "",
+};
+
+export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
+  const [form, setForm] = useState<FormData>(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [showEmailZone, setShowEmailZone] = useState(true);
+
+  const computedEcheance = useMemo(() => {
+    if (!form.priorite || !form.date_demande) return form.echeance;
+    if (form.niveau_priorite === "P1") return addDays(form.date_demande, 3);
+    if (form.niveau_priorite === "P2") return addDays(form.date_demande, 7);
+    if (form.niveau_priorite === "P3") return addDays(form.date_demande, 14);
+    return form.echeance;
+  }, [form.priorite, form.niveau_priorite, form.date_demande, form.echeance]);
+
+  const handleParse = () => {
+    const parsed = parseEmailText(form.emailRaw);
+    setForm((f) => ({
+      ...f,
+      demandeur: parsed.demandeur || f.demandeur,
+      date_demande: parsed.date_demande || f.date_demande,
+      destinataires: parsed.destinataires || f.destinataires,
+      objet: parsed.objet || f.objet,
+      contenu: parsed.contenu || f.contenu,
+    }));
+    setShowEmailZone(false);
+  };
+
+  const update = <K extends keyof FormData>(key: K, value: FormData[K]) => {
+    setForm((f) => ({ ...f, [key]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+
+    const finalEcheance = form.priorite && form.niveau_priorite && form.date_demande
+      ? computedEcheance
+      : form.echeance;
+
+    const payload = {
+      demandeur: form.demandeur,
+      date_demande: form.date_demande || null,
+      destinataires: form.destinataires,
+      objet: form.objet,
+      contenu: form.contenu,
+      type_demande: form.type_demande,
+      type_precision: form.type_precision,
+      pilote: form.pilotes.join(", "),
+      sous_pilote: form.pilotes.includes("DRH") ? form.sous_pilote : null,
+      priorite: form.priorite,
+      niveau_priorite: form.priorite ? form.niveau_priorite : null,
+      echeance: finalEcheance || null,
+      observations: form.observations,
+      statut: "à traiter",
+    };
+
+    const { data, error } = await supabase.from("demandes").insert(payload).select().single();
+    setSaving(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setSuccess(true);
+    setForm(emptyForm);
+    setShowEmailZone(true);
+    if (data) onSaved(data as Demande);
+    setTimeout(() => setSuccess(false), 3500);
+  };
+
+  const fieldClass = "w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 transition text-sm";
+  const labelClass = "block text-sm font-medium text-slate-700 mb-1.5";
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-slate-900">Nouvelle demande</h2>
+        <p className="text-slate-500 text-sm mt-1">Collez l'e-mail pour pré-remplir, puis complétez et enregistrez.</p>
+      </div>
+
+      {error && (
+        <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">
+          <Check className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>Demande enregistrée avec succès. Elle apparaît maintenant dans le tableau.</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {showEmailZone && (
+          <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <ClipboardPaste className="w-4 h-4 text-emerald-600" />
+                Coller le texte de l'e-mail
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowEmailZone(false)}
+                className="text-xs text-slate-500 hover:text-slate-700 underline"
+              >
+                Saisir manuellement
+              </button>
+            </div>
+            <textarea
+              value={form.emailRaw}
+              onChange={(e) => update("emailRaw", e.target.value)}
+              rows={6}
+              className={fieldClass + " font-mono text-xs"}
+              placeholder={"De : ...\nEnvoyé : ...\nÀ : ...\nObjet : ...\n\nContenu du message..."}
+            />
+            <button
+              type="button"
+              onClick={handleParse}
+              disabled={!form.emailRaw.trim()}
+              className="mt-3 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
+            >
+              Pré-remplir le formulaire
+            </button>
+          </div>
+        )}
+
+        {!showEmailZone && (
+          <button
+            type="button"
+            onClick={() => setShowEmailZone(true)}
+            className="text-sm text-emerald-700 hover:text-emerald-800 underline flex items-center gap-1"
+          >
+            <ClipboardPaste className="w-4 h-4" /> Afficher la zone de collage d'e-mail
+          </button>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block">
+            <span className={labelClass}>Demandeur <span className="text-red-500">*</span></span>
+            <input className={fieldClass} value={form.demandeur} onChange={(e) => update("demandeur", e.target.value)} required />
+          </label>
+          <label className="block">
+            <span className={labelClass}>Date de la demande</span>
+            <input type="date" className={fieldClass} value={form.date_demande} onChange={(e) => update("date_demande", e.target.value)} />
+          </label>
+        </div>
+
+        <label className="block">
+          <span className={labelClass}>Destinataires</span>
+          <input className={fieldClass} value={form.destinataires} onChange={(e) => update("destinataires", e.target.value)} />
+        </label>
+
+        <label className="block">
+          <span className={labelClass}>Objet <span className="text-red-500">*</span></span>
+          <input className={fieldClass} value={form.objet} onChange={(e) => update("objet", e.target.value)} required />
+        </label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block">
+            <span className={labelClass}>Type de demande</span>
+            <select className={fieldClass} value={form.type_demande} onChange={(e) => update("type_demande", e.target.value)}>
+              {TYPE_DEMANDE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelClass}>Précisions (type)</span>
+            <textarea rows={3} className={fieldClass} value={form.type_precision} onChange={(e) => update("type_precision", e.target.value)} placeholder="Précisions éventuelles" />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="block">
+            <span className={labelClass}>Pilotes</span>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {PILOTE_OPTIONS.map((p) => {
+                const selected = form.pilotes.includes(p);
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() =>
+                      update(
+                        "pilotes",
+                        selected
+                          ? form.pilotes.filter((x) => x !== p)
+                          : [...form.pilotes, p]
+                      )
+                    }
+                    className={
+                      "px-3 py-1.5 rounded-full text-xs font-medium border transition flex items-center gap-1 " +
+                      (selected
+                        ? "bg-emerald-600 border-emerald-600 text-white"
+                        : "bg-white border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700")
+                    }
+                  >
+                    {p}
+                    {selected && <X className="w-3 h-3" />}
+                  </button>
+                );
+              })}
+            </div>
+            {form.pilotes.includes("DRH") && (
+              <div className="mt-3">
+                <span className={labelClass}>Sous-pilote (DRH)</span>
+                <select className={fieldClass} value={form.sous_pilote} onChange={(e) => update("sous_pilote", e.target.value)}>
+                  <option value="">— Sélectionner —</option>
+                  {SOUS_PILOTE_DRH_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+          <label className="flex items-center gap-2 mb-3 text-sm font-medium text-slate-700">
+            <Flag className="w-4 h-4 text-emerald-600" />
+            <input
+              type="checkbox"
+              checked={form.priorite}
+              onChange={(e) => {
+                update("priorite", e.target.checked);
+                if (!e.target.checked) update("niveau_priorite", "");
+              }}
+              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/40"
+            />
+            Priorité
+          </label>
+
+          {form.priorite && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <label className="block">
+                <span className={labelClass}>Niveau de priorité</span>
+                <select className={fieldClass} value={form.niveau_priorite} onChange={(e) => update("niveau_priorite", e.target.value)}>
+                  <option value="">— Sélectionner —</option>
+                  {NIVEAU_PRIORITE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <div className="block">
+                <span className={labelClass}>Échéance calculée</span>
+                <div className="px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  {computedEcheance || form.echeance || "—"}
+                  {form.niveau_priorite && form.date_demande && computedEcheance && (
+                    <span className="text-xs text-slate-400 ml-auto">
+                      {form.niveau_priorite === "P1" ? "+3 j" : form.niveau_priorite === "P2" ? "+7 j" : "+14 j"}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!form.priorite && (
+            <label className="block">
+              <span className={labelClass}>Échéance (saisie manuelle)</span>
+              <input type="date" className={fieldClass} value={form.echeance} onChange={(e) => update("echeance", e.target.value)} />
+            </label>
+          )}
+        </div>
+
+        <label className="block">
+          <span className={labelClass}>Observations</span>
+          <textarea rows={3} className={fieldClass} value={form.observations} onChange={(e) => update("observations", e.target.value)} placeholder="Remarques, contexte, suivi..." />
+        </label>
+
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold rounded-lg transition flex items-center gap-2"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Enregistrer la demande
+          </button>
+          <button
+            type="button"
+            onClick={() => { setForm(emptyForm); setShowEmailZone(true); }}
+            className="px-4 py-2.5 text-slate-600 hover:text-slate-900 text-sm font-medium"
+          >
+            Réinitialiser
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
