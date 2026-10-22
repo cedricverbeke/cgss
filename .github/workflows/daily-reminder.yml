@@ -1,0 +1,39 @@
+name: Scheduled Daily Reminder (Weekdays Only)
+
+on:
+  schedule:
+    # S'exécute du lundi (1) au vendredi (5) à 10h00 UTC (6h00 en Martinique)
+    - cron: '0 10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  trigger-daily-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase Edge Function Daily Reminder
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          FULL_URL="${SUPABASE_URL}/functions/v1/daily-reminder"
+          
+          echo "Appel de l'Edge Function : $FULL_URL"
+
+          RESPONSE=$(curl -s -o /dev/stdout -w "\nHTTP_STATUS:%{http_code}" -X POST \
+            "$FULL_URL" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{}")
+
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS/d')
+
+          echo "Réponse du serveur : $BODY"
+          echo "Code de retour HTTP : $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 500 ]; then
+            echo "Erreur serveur critique sur l'Edge Function."
+            exit 1
+          else
+            echo "Rappel quotidien exécuté avec succès !"
+          fi
