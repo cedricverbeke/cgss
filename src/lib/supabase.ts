@@ -32,6 +32,11 @@ export type Demande = {
   echeance: string | null;
   observations: string;
   statut: string;
+  relance: boolean;
+  relance_date: string | null;
+  pj_path: string | null;
+  pj_name: string | null;
+  pj_size: number | null;
   user_id: string;
   created_at: string;
 };

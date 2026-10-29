@@ -13,7 +13,8 @@ function Shell() {
   const [view, setView] = useState<View>("dashboard");
   const [demandes, setDemandes] = useState<Demande[]>([]);
   const [demandesLoading, setDemandesLoading] = useState(true);
-  const [selected, setSelected] = useState<Demande | null>(null);
+  const [selectedRaw, setSelected] = useState<Demande | null>(null);
+  const selected = selectedRaw && (demandes.find((d) => d.id === selectedRaw.id) ?? selectedRaw);
 
   const fetchDemandes = useCallback(async () => {
     setDemandesLoading(true);

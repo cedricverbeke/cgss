@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
-import { ClipboardPaste, Save, Loader2, Check, AlertCircle, Calendar, Flag, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ClipboardPaste, Save, Loader2, Check, AlertCircle, Calendar, Flag, X, Bell, Paperclip } from "lucide-react";
 import { supabase, TYPE_DEMANDE_OPTIONS, PILOTE_OPTIONS, SOUS_PILOTE_DRH_OPTIONS, NIVEAU_PRIORITE_OPTIONS, type Demande } from "@/lib/supabase";
 import { parseEmailText, addDays } from "@/lib/emailParser";
+import { uploadPieceJointe, removePieceJointe, type PieceJointeInfo } from "@/lib/pieceJointe";
 
 type FormData = {
   emailRaw: string;
@@ -17,6 +18,9 @@ type FormData = {
   priorite: boolean;
   niveau_priorite: string;
   echeance: string;
+  relance: boolean;
+  relance_date: string;
+  pieceJointe: File | null;
   observations: string;
 };
 
@@ -34,6 +38,9 @@ const emptyForm: FormData = {
   priorite: false,
   niveau_priorite: "",
   echeance: "",
+  relance: false,
+  relance_date: "",
+  pieceJointe: null,
   observations: "",
 };
 
@@ -43,6 +50,7 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showEmailZone, setShowEmailZone] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const computedEcheance = useMemo(() => {
     if (!form.priorite || !form.date_demande) return form.echeance;
@@ -69,6 +77,12 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
     setForm((f) => ({ ...f, [key]: value }));
   };
 
+  const resetForm = () => {
+    setForm(emptyForm);
+    setShowEmailZone(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -78,6 +92,17 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
     const finalEcheance = form.priorite && form.niveau_priorite && form.date_demande
       ? computedEcheance
       : form.echeance;
+
+    let pj: PieceJointeInfo | null = null;
+    if (form.pieceJointe) {
+      try {
+        pj = await uploadPieceJointe(form.pieceJointe);
+      } catch (err) {
+        setSaving(false);
+        setError(err instanceof Error ? err.message : "Échec de l'envoi de la pièce jointe.");
+        return;
+      }
+    }
 
     const payload = {
       demandeur: form.demandeur,
@@ -92,6 +117,11 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
       priorite: form.priorite,
       niveau_priorite: form.priorite ? form.niveau_priorite : null,
       echeance: finalEcheance || null,
+      relance: form.relance,
+      relance_date: form.relance && form.relance_date ? form.relance_date : null,
+      pj_path: pj?.path ?? null,
+      pj_name: pj?.name ?? null,
+      pj_size: pj?.size ?? null,
       observations: form.observations,
       statut: "à traiter",
     };
@@ -99,12 +129,12 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
     const { data, error } = await supabase.from("demandes").insert(payload).select().single();
     setSaving(false);
     if (error) {
+      if (pj) await removePieceJointe(pj.path);
       setError(error.message);
       return;
     }
     setSuccess(true);
-    setForm(emptyForm);
-    setShowEmailZone(true);
+    resetForm();
     if (data) onSaved(data as Demande);
     setTimeout(() => setSuccess(false), 3500);
   };
@@ -300,6 +330,41 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
           )}
         </div>
 
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <Bell className="w-4 h-4 text-emerald-600" />
+            <input
+              type="checkbox"
+              checked={form.relance}
+              onChange={(e) => {
+                update("relance", e.target.checked);
+                if (!e.target.checked) update("relance_date", "");
+              }}
+              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/40"
+            />
+            Relance effectuée
+          </label>
+          {form.relance && (
+            <label className="block">
+              <span className={labelClass}>Date de la relance</span>
+              <input type="date" className={fieldClass} value={form.relance_date} onChange={(e) => update("relance_date", e.target.value)} />
+            </label>
+          )}
+        </div>
+
+        <label className="block">
+          <span className={labelClass}>Pièce jointe (tout format)</span>
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-white border border-slate-300 rounded-lg">
+            <Paperclip className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={(e) => update("pieceJointe", e.target.files?.[0] ?? null)}
+              className="w-full text-sm text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 file:font-medium hover:file:bg-slate-200"
+            />
+          </div>
+        </label>
+
         <label className="block">
           <span className={labelClass}>Observations</span>
           <textarea rows={3} className={fieldClass} value={form.observations} onChange={(e) => update("observations", e.target.value)} placeholder="Remarques, contexte, suivi..." />
@@ -316,7 +381,7 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
           </button>
           <button
             type="button"
-            onClick={() => { setForm(emptyForm); setShowEmailZone(true); }}
+            onClick={resetForm}
             className="px-4 py-2.5 text-slate-600 hover:text-slate-900 text-sm font-medium"
           >
             Réinitialiser

@@ -1,10 +1,30 @@
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Search, X, Pencil, Check, Loader2, Trash2, AlertTriangle, FileText, ExternalLink } from "lucide-react";
+import { ArrowUpDown, Search, X, Pencil, Check, Loader2, Trash2, AlertTriangle, FileText, ExternalLink, Paperclip, Bell } from "lucide-react";
 import { supabase, STATUT_OPTIONS, PILOTE_OPTIONS, TYPE_DEMANDE_OPTIONS, type Demande } from "@/lib/supabase";
 import { getUrgency, URGENCY_LABEL, URGENCY_COLORS, formatDate } from "@/lib/urgency";
+import { openPieceJointe } from "@/lib/pieceJointe";
 
 type SortKey = "short_id" | "demandeur" | "date_demande" | "objet" | "type_demande" | "pilote" | "echeance" | "statut" | "created_at";
 type SortDir = "asc" | "desc";
+
+// Largeurs des colonnes en pixels, dans l'ordre d'affichage.
+// Modifier ces nombres suffit pour changer la mise en page.
+const COL_WIDTHS: [string, number][] = [
+  ["select", 40],
+  ["ID", 80],
+  ["Demandeur", 140],
+  ["Date demande", 110],
+  ["Objet", 220],
+  ["Type", 130],
+  ["Pilote", 130],
+  ["Échéance", 140],
+  ["Relance", 110],
+  ["Statut", 120],
+  ["PJ", 150],
+  ["Précisions", 420],
+  ["Observations", 220],
+];
+const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((sum, [, w]) => sum + w, 0);
 
 const STATUT_STYLE: Record<string, string> = {
   "à traiter": "bg-white border border-slate-300 text-slate-700",
@@ -29,6 +49,11 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [precisionModal, setPrecisionModal] = useState<Demande | null>(null);
+  const [pjError, setPjError] = useState<string | null>(null);
+  const [relanceModal, setRelanceModal] = useState<Demande | null>(null);
+  const [relanceDate, setRelanceDate] = useState("");
+  const [relanceSaving, setRelanceSaving] = useState(false);
+  const [relanceError, setRelanceError] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
     let list = [...demandes];
@@ -76,6 +101,44 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
     const { error } = await supabase.from("demandes").update({ statut }).eq("id", id);
     setUpdatingStatut(null);
     if (!error) onRefresh();
+  };
+
+  const todayLocal = () => {
+    const t = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+  };
+
+  const openRelance = (d: Demande) => {
+    setRelanceError(null);
+    setRelanceDate(d.relance_date || todayLocal());
+    setRelanceModal(d);
+  };
+
+  const saveRelance = async (active: boolean) => {
+    if (!relanceModal) return;
+    setRelanceSaving(true);
+    setRelanceError(null);
+    const { error } = await supabase
+      .from("demandes")
+      .update({ relance: active, relance_date: active && relanceDate ? relanceDate : null })
+      .eq("id", relanceModal.id);
+    setRelanceSaving(false);
+    if (error) {
+      setRelanceError(error.message);
+      return;
+    }
+    setRelanceModal(null);
+    onRefresh();
+  };
+
+  const handleOpenPj = async (path: string) => {
+    setPjError(null);
+    try {
+      await openPieceJointe(path);
+    } catch (err) {
+      setPjError(err instanceof Error ? err.message : "Impossible d'ouvrir la pièce jointe.");
+    }
   };
 
   const toggleSelect = (id: string) => {
@@ -200,7 +263,10 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed" style={{ minWidth: TABLE_MIN_WIDTH }}>
+            <colgroup>
+              {COL_WIDTHS.map(([name, w]) => <col key={name} style={{ width: w }} />)}
+            </colgroup>
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="px-3 py-3 w-10">
@@ -212,34 +278,40 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
                   />
                 </th>
                 {([
-                  ["short_id", "ID"],
-                  ["demandeur", "Demandeur"],
-                  ["date_demande", "Date demande"],
-                  ["objet", "Objet"],
-                  ["type_demande", "Type"],
-                  ["pilote", "Pilote"],
-                  ["echeance", "Échéance"],
-                  ["statut", "Statut"],
-                ] as [SortKey, string][]).map(([key, label]) => (
-                  <th key={key} className="px-3 py-3 text-left">
-                    <button onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 uppercase tracking-wide hover:text-slate-900">
-                      {label}
-                      <ArrowUpDown className={`w-3 h-3 ${sortKey === key ? "text-emerald-600" : "text-slate-400"}`} />
-                    </button>
+                  ["short_id", "ID", ""],
+                  ["demandeur", "Demandeur", ""],
+                  ["date_demande", "Date demande", ""],
+                  ["objet", "Objet", ""],
+                  ["type_demande", "Type", ""],
+                  ["pilote", "Pilote", ""],
+                  ["echeance", "Échéance", ""],
+                  [null, "Relance", ""],
+                  ["statut", "Statut", ""],
+                  [null, "PJ", ""],
+                  [null, "Précisions", ""],
+                  [null, "Observations", ""],
+                ] as [SortKey | null, string, string][]).map(([key, label]) => (
+                  <th key={label} className="px-3 py-3 text-left whitespace-nowrap">
+                    {key ? (
+                      <button onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 uppercase tracking-wide hover:text-slate-900">
+                        {label}
+                        <ArrowUpDown className={`w-3 h-3 ${sortKey === key ? "text-emerald-600" : "text-slate-400"}`} />
+                      </button>
+                    ) : (
+                      <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{label}</span>
+                    )}
                   </th>
                 ))}
-                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Précisions</th>
-                <th className="px-3 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">Observations</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={11} className="px-3 py-10 text-center text-slate-400">
+                <tr><td colSpan={13} className="px-3 py-10 text-center text-slate-400">
                   <Loader2 className="w-5 h-5 animate-spin inline-block" /> Chargement...
                 </td></tr>
               )}
               {!loading && sorted.length === 0 && (
-                <tr><td colSpan={11} className="px-3 py-10 text-center text-slate-400">Aucune demande.</td></tr>
+                <tr><td colSpan={13} className="px-3 py-10 text-center text-slate-400">Aucune demande.</td></tr>
               )}
               {sorted.map((d) => {
                 const u = getUrgency(d);
@@ -261,9 +333,9 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
                         {d.short_id}
                       </button>
                     </td>
-                    <td className="px-3 py-3 text-slate-700 max-w-[160px] truncate">{d.demandeur || "—"}</td>
+                    <td className="px-3 py-3 text-slate-700 truncate">{d.demandeur || "—"}</td>
                     <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{formatDate(d.date_demande)}</td>
-                    <td className="px-3 py-3 text-slate-900 max-w-[220px]">
+                    <td className="px-3 py-3 text-slate-900">
                       <button onClick={() => onOpen(d)} className="text-left truncate block w-full hover:text-emerald-700 hover:underline" title={d.objet}>
                         {d.objet}
                       </button>
@@ -287,6 +359,25 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
                         {u === "soon" && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${uColors.label}`}>J-2</span>}
                       </div>
                     </td>
+                    <td className={`px-0 py-0 whitespace-nowrap text-xs ${d.relance ? "bg-pink-100 text-pink-800 font-medium" : "text-slate-400"}`}>
+                      <button
+                        onClick={() => openRelance(d)}
+                        title={d.relance ? "Modifier la relance" : "Ajouter une relance"}
+                        className={`group w-full h-full px-3 py-3 text-left inline-flex items-center gap-1 transition ${d.relance ? "hover:bg-pink-200" : "hover:bg-slate-100 hover:text-emerald-700"}`}
+                      >
+                        {d.relance ? (
+                          <>
+                            <Bell className="w-3.5 h-3.5" />
+                            {d.relance_date ? formatDate(d.relance_date) : "Relancée"}
+                          </>
+                        ) : (
+                          <>
+                            <span className="group-hover:hidden">—</span>
+                            <span className="hidden group-hover:inline-flex items-center gap-1"><Bell className="w-3.5 h-3.5" />Relancer</span>
+                          </>
+                        )}
+                      </button>
+                    </td>
                     <td className="px-3 py-3">
                       <select
                         value={d.statut}
@@ -297,20 +388,35 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
                         {STATUT_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
-                    <td className="px-3 py-3 max-w-[140px]">
-                      {d.type_precision ? (
+                    <td className="px-3 py-3 align-top">
+                      {d.pj_path ? (
                         <button
-                          onClick={() => setPrecisionModal(d)}
-                          className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-800 hover:underline"
+                          onClick={() => handleOpenPj(d.pj_path!)}
+                          title={d.pj_name ?? undefined}
+                          className="flex items-center gap-1 w-full min-w-0 text-xs text-emerald-700 hover:text-emerald-800 hover:underline"
                         >
-                          <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span className="truncate">{d.type_precision}</span>
+                          <Paperclip className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="min-w-0 truncate">{d.pj_name || "Pièce jointe"}</span>
                         </button>
                       ) : (
                         <span className="text-slate-400 text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 max-w-[240px]">
+                    <td className="px-3 py-3 align-top">
+                      {d.type_precision ? (
+                        <button
+                          onClick={() => setPrecisionModal(d)}
+                          title={d.type_precision}
+                          className="group flex items-start gap-1.5 w-full min-w-0 text-left text-xs text-emerald-700 hover:text-emerald-800"
+                        >
+                          <FileText className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                          <span className="min-w-0 flex-1 line-clamp-4 break-words group-hover:underline">{d.type_precision}</span>
+                        </button>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 align-top">
                       {editingObs === d.id ? (
                         <div className="flex items-start gap-1">
                           <textarea
@@ -331,7 +437,7 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
                           onClick={() => { setEditingObs(d.id); setObsDraft(d.observations || ""); }}
                           className="group flex items-start gap-1 text-left text-xs text-slate-600 w-full"
                         >
-                          <span className="flex-1 line-clamp-2">{d.observations || <span className="text-slate-400 italic">Ajouter...</span>}</span>
+                          <span className="flex-1 min-w-0 line-clamp-2 break-words">{d.observations || <span className="text-slate-400 italic">Ajouter...</span>}</span>
                           <Pencil className="w-3 h-3 text-slate-300 group-hover:text-emerald-600 flex-shrink-0 mt-0.5" />
                         </button>
                       )}
@@ -343,6 +449,10 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
           </table>
         </div>
       </div>
+
+      {pjError && (
+        <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{pjError}</div>
+      )}
 
       {precisionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setPrecisionModal(null)}>
@@ -373,6 +483,65 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
               >
                 <ExternalLink className="w-4 h-4" /> Ouvrir la fiche complète
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {relanceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => !relanceSaving && setRelanceModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <Bell className="w-5 h-5 text-pink-600" />
+                <h3 className="text-sm font-semibold text-slate-900">Relance — {relanceModal.short_id}</h3>
+              </div>
+              <button onClick={() => setRelanceModal(null)} disabled={relanceSaving} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <div className="text-sm text-slate-700 mb-4 line-clamp-2">{relanceModal.objet}</div>
+              <label className="block">
+                <span className="block text-xs font-medium text-slate-600 mb-1">Date de la relance</span>
+                <input
+                  type="date"
+                  value={relanceDate}
+                  onChange={(e) => setRelanceDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 transition"
+                />
+              </label>
+              {relanceError && (
+                <div className="mt-3 p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">{relanceError}</div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between gap-2">
+              {relanceModal.relance ? (
+                <button
+                  onClick={() => saveRelance(false)}
+                  disabled={relanceSaving}
+                  className="text-sm text-red-600 hover:text-red-700 hover:underline disabled:opacity-60"
+                >
+                  Retirer la relance
+                </button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRelanceModal(null)}
+                  disabled={relanceSaving}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition disabled:opacity-60"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => saveRelance(true)}
+                  disabled={relanceSaving}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition"
+                >
+                  {relanceSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Enregistrer
+                </button>
+              </div>
             </div>
           </div>
         </div>
