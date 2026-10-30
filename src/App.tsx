@@ -68,7 +68,7 @@ function Shell() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Header view={view} onChange={setView} />
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <main className={view === "table" ? "w-full px-4 sm:px-6 py-8" : "max-w-6xl mx-auto px-4 sm:px-6 py-8"}>
         {view === "dashboard" && <Dashboard demandes={demandes} onOpen={setSelected} onMarkDone={markDone} />}
         {view === "form" && <DemandeForm onSaved={() => { fetchDemandes(); setView("table"); }} />}
         {view === "table" && (

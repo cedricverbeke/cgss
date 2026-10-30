@@ -10,7 +10,7 @@ type EditFormData = {
   type_demande: string;
   type_precision: string;
   pilotes: string[];
-  sous_pilote: string;
+  sous_pilotes: string[];
   echeance: string;
   relance: boolean;
   relance_date: string;
@@ -25,7 +25,7 @@ const toFormData = (d: Demande): EditFormData => ({
   type_demande: d.type_demande,
   type_precision: d.type_precision ?? "",
   pilotes: d.pilote ? d.pilote.split(", ").filter(Boolean) : [],
-  sous_pilote: d.sous_pilote ?? "",
+  sous_pilotes: d.sous_pilote ? d.sous_pilote.split(", ").filter(Boolean) : [],
   echeance: d.echeance ?? "",
   relance: d.relance,
   relance_date: d.relance_date ?? "",
@@ -58,7 +58,7 @@ export function DemandeEditForm({ demande, onCancel, onSaved }: { demande: Deman
         type_demande: form.type_demande,
         type_precision: form.type_precision,
         pilote: form.pilotes.join(", "),
-        sous_pilote: form.pilotes.includes("DRH") ? form.sous_pilote : "",
+        sous_pilote: form.pilotes.includes("DRH") ? form.sous_pilotes.join(", ") : "",
         echeance: form.echeance || null,
         relance: form.relance,
         relance_date: form.relance && form.relance_date ? form.relance_date : null,
@@ -140,11 +140,27 @@ export function DemandeEditForm({ demande, onCancel, onSaved }: { demande: Deman
         </div>
         {form.pilotes.includes("DRH") && (
           <div className="mt-3">
-            <span className={labelClass}>Sous-pilote (DRH)</span>
-            <select className={fieldClass} value={form.sous_pilote} onChange={(e) => update("sous_pilote", e.target.value)}>
-              <option value="">— Sélectionner —</option>
-              {SOUS_PILOTE_DRH_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <span className={labelClass}>Sous-pilotes (DRH)</span>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {SOUS_PILOTE_DRH_OPTIONS.map((s) => {
+                const selected = form.sous_pilotes.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => update("sous_pilotes", selected ? form.sous_pilotes.filter((x) => x !== s) : [...form.sous_pilotes, s])}
+                    className={
+                      "px-3 py-1.5 rounded-full text-xs font-medium border transition " +
+                      (selected
+                        ? "bg-emerald-600 border-emerald-600 text-white"
+                        : "bg-white border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700")
+                    }
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
