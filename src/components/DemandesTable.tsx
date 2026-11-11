@@ -1,11 +1,18 @@
 import { useMemo, useState } from "react";
 import { ArrowUpDown, Search, X, Pencil, Check, Loader2, Trash2, AlertTriangle, FileText, ExternalLink, Paperclip, Bell } from "lucide-react";
-import { supabase, STATUT_OPTIONS, PILOTE_OPTIONS, TYPE_DEMANDE_OPTIONS, type Demande } from "@/lib/supabase";
+import { supabase, STATUT_OPTIONS, PILOTE_OPTIONS, type Demande } from "@/lib/supabase";
 import { getUrgency, URGENCY_LABEL, URGENCY_COLORS, formatDate } from "@/lib/urgency";
 import { openPieceJointe } from "@/lib/pieceJointe";
+import { useTypesDemande } from "@/lib/useTypesDemande";
 
 type SortKey = "short_id" | "demandeur" | "date_demande" | "objet" | "type_demande" | "pilote" | "echeance" | "statut" | "created_at";
 type SortDir = "asc" | "desc";
+
+const STATUT_STYLE: Record<string, string> = {
+  "à traiter": "bg-white border border-slate-300 text-slate-700",
+  "en cours": "bg-orange-100 border border-orange-300 text-orange-800",
+  "terminé": "bg-emerald-100 border border-emerald-300 text-emerald-800",
+};
 
 // Largeurs des colonnes en pixels, dans l'ordre d'affichage.
 // Modifier ces nombres suffit pour changer la mise en page.
@@ -26,13 +33,13 @@ const COL_WIDTHS: [string, number][] = [
 ];
 const TABLE_MIN_WIDTH = COL_WIDTHS.reduce((sum, [, w]) => sum + w, 0);
 
-const STATUT_STYLE: Record<string, string> = {
-  "à traiter": "bg-white border border-slate-300 text-slate-700",
-  "en cours": "bg-orange-100 border border-orange-300 text-orange-800",
-  "terminé": "bg-emerald-100 border border-emerald-300 text-emerald-800",
-};
-
 export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demandes: Demande[]; loading: boolean; onRefresh: () => void; onOpen: (d: Demande) => void }) {
+  const { types } = useTypesDemande();
+  const typeOptions = useMemo(() => {
+    const set = new Set<string>(types.map((t) => t.libelle));
+    demandes.forEach((d) => { if (d.type_demande) set.add(d.type_demande); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [types, demandes]);
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filterStatut, setFilterStatut] = useState("");
@@ -103,6 +110,15 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
     if (!error) onRefresh();
   };
 
+  const handleOpenPj = async (path: string) => {
+    setPjError(null);
+    try {
+      await openPieceJointe(path);
+    } catch (err) {
+      setPjError(err instanceof Error ? err.message : "Impossible d'ouvrir la pièce jointe.");
+    }
+  };
+
   const todayLocal = () => {
     const t = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -130,15 +146,6 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
     }
     setRelanceModal(null);
     onRefresh();
-  };
-
-  const handleOpenPj = async (path: string) => {
-    setPjError(null);
-    try {
-      await openPieceJointe(path);
-    } catch (err) {
-      setPjError(err instanceof Error ? err.message : "Impossible d'ouvrir la pièce jointe.");
-    }
   };
 
   const toggleSelect = (id: string) => {
@@ -241,7 +248,7 @@ export function DemandesTable({ demandes, loading, onRefresh, onOpen }: { demand
             <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
             <select className={selectClass + " w-full"} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
               <option value="">Tous</option>
-              {TYPE_DEMANDE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+              {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>

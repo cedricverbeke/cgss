@@ -41,7 +41,13 @@ export type Demande = {
   created_at: string;
 };
 
-export const TYPE_DEMANDE_OPTIONS = [
+export type TypeDemande = {
+  id: string;
+  libelle: string;
+  position: number;
+};
+
+export const TYPE_DEMANDE_DEFAULTS = [
   "actions à réaliser",
   "arbitrage",
   "préparation dossier",

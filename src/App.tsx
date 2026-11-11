@@ -7,6 +7,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { DemandeForm } from "@/components/DemandeForm";
 import { DemandesTable } from "@/components/DemandesTable";
 import { DemandeDetail } from "@/components/DemandeDetail";
+import { TypesDemandeManager } from "@/components/TypesDemandeManager";
 
 function Shell() {
   const { user, loading, isAuthorized } = useAuth();
@@ -68,12 +69,13 @@ function Shell() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Header view={view} onChange={setView} />
-      <main className={view === "table" ? "w-full px-4 sm:px-6 py-8" : "max-w-6xl mx-auto px-4 sm:px-6 py-8"}>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
         {view === "dashboard" && <Dashboard demandes={demandes} onOpen={setSelected} onMarkDone={markDone} />}
         {view === "form" && <DemandeForm onSaved={() => { fetchDemandes(); setView("table"); }} />}
         {view === "table" && (
           <DemandesTable demandes={demandes} loading={demandesLoading} onRefresh={fetchDemandes} onOpen={setSelected} />
         )}
+        {view === "types" && <TypesDemandeManager />}
       </main>
       {selected && <DemandeDetail demande={selected} onClose={() => setSelected(null)} onUpdated={fetchDemandes} />}
     </div>

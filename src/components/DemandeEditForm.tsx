@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertCircle, Loader2, Save } from "lucide-react";
-import { supabase, PILOTE_OPTIONS, SOUS_PILOTE_DRH_OPTIONS, TYPE_DEMANDE_OPTIONS, type Demande } from "@/lib/supabase";
+import { supabase, PILOTE_OPTIONS, SOUS_PILOTE_DRH_OPTIONS, type Demande } from "@/lib/supabase";
+import { useTypesDemande } from "@/lib/useTypesDemande";
 
 type EditFormData = {
   demandeur: string;
@@ -10,7 +11,7 @@ type EditFormData = {
   type_demande: string;
   type_precision: string;
   pilotes: string[];
-  sous_pilotes: string[];
+  sous_pilote: string;
   echeance: string;
   relance: boolean;
   relance_date: string;
@@ -25,7 +26,7 @@ const toFormData = (d: Demande): EditFormData => ({
   type_demande: d.type_demande,
   type_precision: d.type_precision ?? "",
   pilotes: d.pilote ? d.pilote.split(", ").filter(Boolean) : [],
-  sous_pilotes: d.sous_pilote ? d.sous_pilote.split(", ").filter(Boolean) : [],
+  sous_pilote: d.sous_pilote ?? "",
   echeance: d.echeance ?? "",
   relance: d.relance,
   relance_date: d.relance_date ?? "",
@@ -36,6 +37,8 @@ const fieldClass = "w-full px-3 py-2.5 bg-white border border-slate-300 rounded-
 const labelClass = "block text-sm font-medium text-slate-700 mb-1.5";
 
 export function DemandeEditForm({ demande, onCancel, onSaved }: { demande: Demande; onCancel: () => void; onSaved: () => void }) {
+  const { types } = useTypesDemande();
+  const typeOptions = types.map((t) => t.libelle);
   const [form, setForm] = useState<EditFormData>(() => toFormData(demande));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export function DemandeEditForm({ demande, onCancel, onSaved }: { demande: Deman
         type_demande: form.type_demande,
         type_precision: form.type_precision,
         pilote: form.pilotes.join(", "),
-        sous_pilote: form.pilotes.includes("DRH") ? form.sous_pilotes.join(", ") : "",
+        sous_pilote: form.pilotes.includes("DRH") ? form.sous_pilote : "",
         echeance: form.echeance || null,
         relance: form.relance,
         relance_date: form.relance && form.relance_date ? form.relance_date : null,
@@ -105,9 +108,9 @@ export function DemandeEditForm({ demande, onCancel, onSaved }: { demande: Deman
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <label className="block">
-          <span className={labelClass}>Type de demande</span>
+          <span className={labelClass}>Type de demande / action à réaliser</span>
           <select className={fieldClass} value={form.type_demande} onChange={(e) => update("type_demande", e.target.value)}>
-            {TYPE_DEMANDE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+            {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
         <label className="block">
@@ -140,27 +143,11 @@ export function DemandeEditForm({ demande, onCancel, onSaved }: { demande: Deman
         </div>
         {form.pilotes.includes("DRH") && (
           <div className="mt-3">
-            <span className={labelClass}>Sous-pilotes (DRH)</span>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {SOUS_PILOTE_DRH_OPTIONS.map((s) => {
-                const selected = form.sous_pilotes.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => update("sous_pilotes", selected ? form.sous_pilotes.filter((x) => x !== s) : [...form.sous_pilotes, s])}
-                    className={
-                      "px-3 py-1.5 rounded-full text-xs font-medium border transition " +
-                      (selected
-                        ? "bg-emerald-600 border-emerald-600 text-white"
-                        : "bg-white border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700")
-                    }
-                  >
-                    {s}
-                  </button>
-                );
-              })}
-            </div>
+            <span className={labelClass}>Sous-pilote (DRH)</span>
+            <select className={fieldClass} value={form.sous_pilote} onChange={(e) => update("sous_pilote", e.target.value)}>
+              <option value="">— Sélectionner —</option>
+              {SOUS_PILOTE_DRH_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
         )}
       </div>

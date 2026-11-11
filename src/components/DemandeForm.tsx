@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
-import { ClipboardPaste, Save, Loader2, Check, AlertCircle, Calendar, Flag, X, Bell, Paperclip } from "lucide-react";
-import { supabase, TYPE_DEMANDE_OPTIONS, PILOTE_OPTIONS, SOUS_PILOTE_DRH_OPTIONS, NIVEAU_PRIORITE_OPTIONS, type Demande } from "@/lib/supabase";
+import { ClipboardPaste, Save, Loader2, Check, AlertCircle, Calendar, Flag, X, Bell, Paperclip, Plus } from "lucide-react";
+import { supabase, PILOTE_OPTIONS, SOUS_PILOTE_DRH_OPTIONS, NIVEAU_PRIORITE_OPTIONS, type Demande } from "@/lib/supabase";
 import { parseEmailText, addDays } from "@/lib/emailParser";
 import { uploadPieceJointe, removePieceJointe, type PieceJointeInfo } from "@/lib/pieceJointe";
+import { useTypesDemande } from "@/lib/useTypesDemande";
 
 type FormData = {
   emailRaw: string;
@@ -14,7 +15,7 @@ type FormData = {
   type_demande: string;
   type_precision: string;
   pilotes: string[];
-  sous_pilotes: string[];
+  sous_pilote: string;
   priorite: boolean;
   niveau_priorite: string;
   echeance: string;
@@ -34,7 +35,7 @@ const emptyForm: FormData = {
   type_demande: "actions à réaliser",
   type_precision: "",
   pilotes: [],
-  sous_pilotes: [],
+  sous_pilote: "",
   priorite: false,
   niveau_priorite: "",
   echeance: "",
@@ -45,12 +46,17 @@ const emptyForm: FormData = {
 };
 
 export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
+  const { types, addType } = useTypesDemande();
+  const typeOptions = types.map((t) => t.libelle);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showEmailZone, setShowEmailZone] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showNewType, setShowNewType] = useState(false);
+  const [newTypeLibelle, setNewTypeLibelle] = useState("");
+  const [addingType, setAddingType] = useState(false);
 
   const computedEcheance = useMemo(() => {
     if (!form.priorite || !form.date_demande) return form.echeance;
@@ -83,6 +89,26 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleAddType = async () => {
+    const trimmed = newTypeLibelle.trim();
+    if (!trimmed) return;
+    if (typeOptions.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
+      setError("Ce type existe déjà.");
+      return;
+    }
+    setAddingType(true);
+    setError(null);
+    const created = await addType(trimmed);
+    setAddingType(false);
+    if (!created) {
+      setError("Impossible d'ajouter ce type.");
+      return;
+    }
+    update("type_demande", created.libelle);
+    setNewTypeLibelle("");
+    setShowNewType(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -113,7 +139,7 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
       type_demande: form.type_demande,
       type_precision: form.type_precision,
       pilote: form.pilotes.join(", "),
-      sous_pilote: form.pilotes.includes("DRH") && form.sous_pilotes.length > 0 ? form.sous_pilotes.join(", ") : null,
+      sous_pilote: form.pilotes.includes("DRH") ? form.sous_pilote : null,
       priorite: form.priorite,
       niveau_priorite: form.priorite ? form.niveau_priorite : null,
       echeance: finalEcheance || null,
@@ -228,12 +254,48 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
         </label>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="block">
-            <span className={labelClass}>Type de demande</span>
-            <select className={fieldClass} value={form.type_demande} onChange={(e) => update("type_demande", e.target.value)}>
-              {TYPE_DEMANDE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </label>
+          <div className="block">
+            <span className={labelClass}>Type de demande / action à réaliser</span>
+            <div className="flex items-center gap-2">
+              <select className={fieldClass} value={form.type_demande} onChange={(e) => update("type_demande", e.target.value)}>
+                {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowNewType((s) => !s)}
+                title="Ajouter un nouveau type"
+                className="flex-shrink-0 p-2.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-300 rounded-lg transition"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            {showNewType && (
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  value={newTypeLibelle}
+                  onChange={(e) => setNewTypeLibelle(e.target.value)}
+                  placeholder="Nouveau type..."
+                  className={fieldClass}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddType(); } }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddType}
+                  disabled={addingType || !newTypeLibelle.trim()}
+                  className="flex-shrink-0 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition"
+                >
+                  {addingType ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowNewType(false); setNewTypeLibelle(""); }}
+                  className="flex-shrink-0 p-2.5 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
           <label className="block">
             <span className={labelClass}>Précisions (type)</span>
             <textarea rows={3} className={fieldClass} value={form.type_precision} onChange={(e) => update("type_precision", e.target.value)} placeholder="Précisions éventuelles" />
@@ -273,27 +335,11 @@ export function DemandeForm({ onSaved }: { onSaved: (d: Demande) => void }) {
             </div>
             {form.pilotes.includes("DRH") && (
               <div className="mt-3">
-                <span className={labelClass}>Sous-pilotes (DRH)</span>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {SOUS_PILOTE_DRH_OPTIONS.map((s) => {
-                    const selected = form.sous_pilotes.includes(s);
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => update("sous_pilotes", selected ? form.sous_pilotes.filter((x) => x !== s) : [...form.sous_pilotes, s])}
-                        className={
-                          "px-3 py-1.5 rounded-full text-xs font-medium border transition flex items-center gap-1 " +
-                          (selected
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "bg-white border-slate-300 text-slate-600 hover:border-emerald-400 hover:text-emerald-700")
-                        }
-                      >
-                        {s} {selected && <X className="w-3 h-3" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                <span className={labelClass}>Sous-pilote (DRH)</span>
+                <select className={fieldClass} value={form.sous_pilote} onChange={(e) => update("sous_pilote", e.target.value)}>
+                  <option value="">— Sélectionner —</option>
+                  {SOUS_PILOTE_DRH_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
             )}
           </div>

@@ -1,7 +1,7 @@
-import { LayoutDashboard, FilePlus, Table, LogOut } from "lucide-react";
+import { LayoutDashboard, FilePlus, Table, LogOut, Settings2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
-export type View = "dashboard" | "form" | "table";
+export type View = "dashboard" | "form" | "table" | "types";
 
 export function Header({ view, onChange }: { view: View; onChange: (v: View) => void }) {
   const { user, signOut } = useAuth();
@@ -10,6 +10,7 @@ export function Header({ view, onChange }: { view: View; onChange: (v: View) => 
     { key: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
     { key: "form", label: "Nouvelle demande", icon: FilePlus },
     { key: "table", label: "Toutes les demandes", icon: Table },
+    { key: "types", label: "Types de demandes", icon: Settings2 },
   ];
 
   return (
